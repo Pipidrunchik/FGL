@@ -28,6 +28,7 @@ class QuantumCore:
 
 core = QuantumCore()
 
+@app.route('/')
 @app.route('/api')
 def handle_quantum():
     gate = request.args.get('gate', 'constant')
