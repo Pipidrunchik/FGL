@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body { margin: 0; background: #000; color: #0ff; font-family: monospace; overflow: hidden; }
+        #q-app { background:#000; padding:15px; width:100%; height: 100vh; display: flex; flex-direction: column; box-sizing: border-box; }
+        @keyframes alarm-blink { 0%, 100% { border: 1px solid #1a3a3a; } 50% { border: 1px solid #f00; box-shadow: inset 0 0 25px #f00; } }
+        .alarm-active { animation: alarm-blink 0.4s infinite !important; }
+        #auth-overlay { position: absolute; inset: 0; background: #000; z-index: 99999; display: flex; flex-direction: column; padding: 30px; justify-content: center; align-items: center; }
+        #main-content { visibility: hidden; height: 100%; overflow-y: auto; display: flex; flex-direction: column; flex: 1; }
+        .card { background:rgba(10,10,10,0.98); border:1px solid #1a3a3a; border-radius:12px; padding:10px; margin-bottom:8px; position: relative; }
+        .btn-ui { background:transparent; border:1px solid #0ff; color:#0ff; padding:10px; cursor:pointer; flex:1; font-size:10px; font-weight:bold; text-transform: uppercase; border-radius:4px; }
+        .label-meta { font-size:9px; color:#4a8a8a; margin-bottom:5px; display:flex; justify-content:space-between; letter-spacing: 1px; }
+        #log-stream { height:160px; overflow-y:auto; font-size:10px; background:#020202; border:1px solid #1a3a3a; padding:8px; color:#0f0; border-radius: 5px; white-space: pre-wrap; }
+        .grid-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        pre { margin: 0; font-family: 'Consolas', monospace; color: #0ff; font-size: 10px; line-height: 1.1; }
+        input[type=range] { background:#000; width: 100%; }
+        .h-bar { background: #0ff; width: 20px; transition: height 0.3s; border-radius: 2px 2px 0 0; opacity: 0.8; }
+    </style>
+</head>
+<body>
+<div id="q-app">
+    <div id="auth-overlay">
+        <h1 style="letter-spacing:8px; color:#0ff; font-size: 22px;">ACCESS_CODE</h1>
+        <input type="password" id="sys-pass" style="background:#000; border:1px solid #0ff; color:#0ff; padding:15px; text-align:center; width: 85%; margin: 20px 0;" placeholder="ENTER_KEY">
+        <button onclick="checkAuth()" class="btn-ui" style="flex:none; width:85%; padding: 15px;">INITIALIZE_CORE</button>
+    </div>
+
+    <div id="main-content">
+        <div style="display:flex; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid #1a3a3a;">
+            <b style="color:#0ff; font-size: 12px; letter-spacing: 1px;">IBM_Q_V5_ANALYTICS</b>
+            <span id="temp-display" style="color:#4a8a8a; font-size:10px;">TEMP: 32.4°C</span>
+            <button onclick="downloadLogs()" style="color:#0f0; background:none; border:1px solid #0f0; font-size:10px; padding:2px 10px;">LOGS</button>
+        </div>
+
+        <div class="grid-metrics" style="margin-top:10px;">
+            <div class="card"><div class="label-meta">Q0_BLOCH</div><canvas id="c0" width="130" height="130" style="width:100%"></canvas></div>
+            <div class="card"><div class="label-meta">Q1_BLOCH</div><canvas id="c1" width="130" height="130" style="width:100%"></canvas></div>
+        </div>
+
+        <div class="card">
+            <div class="label-meta">PHASE_OSCILLOSCOPE</div>
+            <canvas id="noise-canvas" width="550" height="40" style="width:100%;"></canvas>
+        </div>
+
+        <div class="card">
+            <div class="label-meta">PROBABILITY</div>
+            <div style="display:flex; justify-content:center; align-items:flex-end; gap:40px; height:35px; background:rgba(0,255,255,0.03);">
+                <div id="h0" class="h-bar" style="height:0%;"></div>
+                <div id="h1" class="h-bar" style="height:0%;"></div>
+            </div>
+        </div>
+
+        <div class="grid-metrics">
+            <div class="card">
+                <div class="label-meta">FIDELITY</div>
+                <div id="fid-val" style="font-size:20px; font-weight:bold; color:#0ff;">1.0000</div>
+                <div style="height:4px; background:#222; margin-top:5px;"><div id="fid-bar" style="width:100%; height:100%; background:#0ff;"></div></div>
+            </div>
+            <div class="card"><div class="label-meta">CIRCUIT</div><pre id="circuit-display" style="font-size:8px;">READY...</pre></div>
+        </div>
+
+        <div class="card" style="flex:1;"><div id="log-stream"></div></div>
+
+        <div class="card" style="margin-top:auto; padding:10px;">
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                <input type="range" id="n-sld" min="0" max="100" value="5">
+                <select id="b-sel" style="background:#000; color:#0ff; border:1px solid #1a3a3a; font-size:10px;">
+                    <option>10</option><option selected>25</option><option>50</option><option>100</option>
+                </select>
+            </div>
+            <div class="card" style="margin-top:auto; padding:5px;">
+    <!-- Сетка кнопок 3 столбика -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;">
+        <button onclick="run('constant')" class="btn-ui" style="font-size:8px; padding:8px 0;">CONST</button>
+        <button onclick="run('balanced')" class="btn-ui" style="font-size:8px; padding:8px 0;">BALANC</button>
+        <button onclick="run('random')" class="btn-ui" style="font-size:8px; padding:8px 0;">RANDOM</button>
+        
+        <button onclick="run('bell')" class="btn-ui" style="font-size:8px; padding:8px 0; border-color:#f0f;">BELL</button>
+        <button onclick="coolDown()" class="btn-ui" style="font-size:8px; padding:8px 0; color:#fff; background:#004; border-color:#0ff;">ICE</button>
+        <button onclick="showManual()" class="btn-ui" style="font-size:8px; padding:8px 0; border-color:#f0f; color:#f0f;">HELP</button>
+        <button onclick="syncWithPython( ' batch ' )" class="btn-ui" style="grid-column: span 2; background:#0ff; color:#000; font-size:8px; padding:8px 0;">SYNC_WITH_PYTHON</button>
+        <button onclick="runBatch()" class="btn-ui" style="grid-column: span 2; background:#0ff; color:#000; font-size:8px; padding:8px 0;">BATCH_RUN</button>
+        <button onclick="downloadLogs()" class="btn-ui" style="font-size:8px; padding:8px 0; border-color:#0f0; color:#0f0;">LOGS</button>
+    </div>
+</div>
+    </div>
+</div>
+
+<script>
+const DATA = {
+    "constant": {"c": "      ┌───┐ ░       ░ ┌───┐ ┌─┐\nq0: ──┤ H ├─░───I───░─┤ H ├─┤M├─\n      ├───┤ ░ ┌───┐ ░ ├───┤ └╥┘\nq1: ──┤ X ├─░─┤ H ├─░─┤ H ├──╫──\n      └───┘ ░ └───┘ ░ └───┘  ║  "},
+    "balanced": {"c": "      ┌───┐ ░       ░ ┌───┐ ┌─┐\nq0: ──┤ H ├─░───■───░─┤ H ├─┤M├─\n      ├───┤ ░ ┌─┴─┐ ░ ├───┤ └╥┘\nq1: ──┤ X ├─░─┤ X ├─░─┤ H ├──╫──\n      └───┘ ░ └───┘ ░ └───┘  ║  "},
+    "bell":     {"c": "      ┌───┐      ┌─┐\nq0: ──┤ H ├──■───┤M├─\n      └───┘┌─┴─┐ └╥┘\nq1: ───────┤ X ├──╫──\n           └───┘  ║  "}
+}; 
+
+let logDataFull = []; let aCtx = null; let sysTemp = 32.4; let coherence = 100; let isUltraCold = false 
+
+
+async function syncWithPython(gateName) {
+    // 1. Подставляем 'constant', если вдруг забыли передать имя
+    const mode = gateName || 'constant';
+    addLog(`>> INIT_${mode.toUpperCase()}_SEQUENCE...`);
+
+    try {
+        // 2. Стучимся к серверу с параметром (gate=batch или gate=bell и т.д.)
+        const response = await fetch(`http://localhost:8080?gate=${mode}`);
+        const data = await response.json();
+
+        // 3. Обновляем цифры на экране (они придут в любом случае)
+        document.getElementById('temp-display').innerText = `TEMP: ${data.temp}°C`;
+        document.getElementById('fid-val').innerText = data.fidelity;
+        
+        // 4. Обновляем схему (для батча там будет строка "BATCH_DATA_STREAM")
+        document.getElementById('circuit-display').innerText = data.c;
+
+        // 5. Умный лог: проверяем тип ответа от Python
+        if (data.type === "BATCH") {
+            addLog(`[OK] BATCH_COMPLETED // SAMPLES: ${data.count}`);
+            addLog(`>> AVG_FIDELITY: ${data.fidelity}`); // Выводим среднее значение
+        } else {
+            addLog(`[OK] SYNC_STABLE // MODE: ${data.mode.toUpperCase()}`);
+        }
+
+    } catch (e) {
+        addLog("!! SYNC_FATAL_ERROR: NODE_UNREACHABLE");
+        console.error(e);
+    }
+}
+
+
+function beep(f, d, v=0.05) {
+    if(!aCtx) return;
+    let o = aCtx.createOscillator(); let g = aCtx.createGain();
+    o.connect(g); g.connect(aCtx.destination);
+    o.frequency.value = f; g.gain.setValueAtTime(v, aCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, aCtx.currentTime + d);
+    o.start(); o.stop(aCtx.currentTime + d);
+}
+
+function checkAuth() {
+    if(document.getElementById('sys-pass').value==='1337') {
+        document.getElementById('auth-overlay').style.display='none';
+        document.getElementById('main-content').style.visibility='visible';
+        aCtx = new (window.AudioContext||window.webkitAudioContext)();
+        loopNoise(); updateThermal(); startDecoherence();
+        addLog("SYSTEM_ACCESS_GRANTED // NOISE_MONITOR_ON");
+    } else { alert("ACCESS_DENIED"); }
+}
+
+function updateThermal() {
+    sysTemp += (Math.random() - 0.45) * 0.1;
+    document.getElementById('temp-display').innerText = `TEMP: ${sysTemp.toFixed(1)}°C`;
+    if(sysTemp > 41) addLog(`[!] OVERHEAT_WARNING: ${sysTemp.toFixed(1)}°C`);
+    setTimeout(updateThermal, 3000);
+}
+ function startDecoherence() {
+    setInterval(() => {
+        if (coherence > 0) {
+            let loss = isUltraCold ? 0.1 : 0.6;
+            coherence = Math.max(0, coherence - loss);
+            if(document.getElementById('coh-val')) {
+                document.getElementById('coh-val').innerText = coherence.toFixed(1) + "%";
+                document.getElementById('coh-bar').style.width = coherence + "%";
+            }
+        }
+    }, 1000);
+}
+
+// --- НОВАЯ ФУНКЦИЯ: MANUAL ---
+function showManual() {
+    const m = document.createElement('div');
+    m.id = "manual-overlay";
+    m.style = "position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:100000;padding:20px;color:#0ff;font-family:monospace;border:2px solid #0ff;display:flex;flex-direction:column;";
+    m.innerHTML = `<h2>QUANTUM_CORE_MANUAL</h2><div style="flex:1;overflow-y:auto;font-size:12px;">
+    <b>H (Hadamard):</b> Создает суперпозицию. 50/50 вероятность.<br><br>
+    <b>X (Pauli-X):</b> Квантовый инвертор (NOT gate).<br><br>
+    <b>I (Identity):</b> Пустая операция, сохраняет состояние.<br><br>
+    <b>CNOT (Control-NOT):</b> Запутывает кубиты. Инвертирует q1, если q0 = 1.<br><br>
+    <b>Deutsch Algorithm:</b> Вычисляет свойство функции за один проход вместо двух.</div>
+    <button onclick="this.parentElement.remove()" class="btn-ui" style="margin-top:20px;">CLOSE_MANUAL</button>`;
+    document.body.appendChild(m);
+    addLog("USER_OPENED_MANUAL");
+}
+function coolDown() {
+    isUltraCold = true;
+    coherence = 100;
+    sysTemp = 0.015;
+    
+    // Визуальное подтверждение
+    addLog("CRYO_SYSTEM_ACTIVE // TEMP: 0.015K");
+    document.getElementById('temp-display').style.color = "#0ff"; // Станет голубым
+    document.getElementById('temp-display').innerText = "TEMP: 0.015K";
+    beep(1200, 0.4);
+
+    // Через 15 секунд эффект тает
+    setTimeout(() => {
+        isUltraCold = false;
+        document.getElementById('temp-display').style.color = "#4a8a8a";
+        addLog("CRYO_DEGRADATION");
+    }, 15000);
+}
+function run(mode, isBatch=false) {
+    const noiseSlider = parseInt(document.getElementById('n-sld').value);
+    const shots = parseInt(document.getElementById('b-sel').value);
+    const type = mode === 'random' ? (Math.random() > 0.5 ? 'constant' : 'balanced') : mode;
+    const d = DATA[type];
+
+    // Учет охлаждения и распада (decoherence)
+    let effectiveNoise = isUltraCold ? 0 : parseInt(document.getElementById('n-sld').value);
+    if (isUltraCold) {
+    effectiveNoise += (100 - coherence) * 0.5; 
+    }
+    
+    effectiveNoise = Math.min(100, Math.max(0, effectiveNoise));
+    // Симуляция измерений (Shots)
+    let count0 = 0;
+    for(let i=0; i<shots; i++) {
+        let prob;
+        if (type === 'constant') prob = 0.95;
+        else if (type === 'balanced') prob = 0.05;
+        else if (type === 'bell') prob = 0.50; // Запутанность
+        
+        // Вносим искажение от шума
+        if (Math.random() < (prob + (Math.random()-0.5) * (effectiveNoise/100))) {
+            count0++;
+        }
+    }
+
+    const p0 = (count0 / shots * 100).toFixed(1);
+    const p1 = (100 - p0).toFixed(1);
+    const fid = (1 - (effectiveNoise/150)).toFixed(4);
+
+    // Визуальные эффекты тревоги
+    if (effectiveNoise > 75) {
+        document.getElementById('q-app').classList.add('alarm-active');
+        beep(1100, 0.2, 0.1); 
+    } else { 
+        document.getElementById('q-app').classList.remove('alarm-active'); 
+    }
+
+    // Обновление UI
+    document.getElementById('circuit-display').innerText = d.c;
+    document.getElementById('fid-val').innerText = fid;
+    document.getElementById('fid-bar').style.width = (fid * 100) + "%";
+    
+    // Гистограмма (теперь со значениями)
+    const h0 = document.getElementById('h0');
+    const h1 = document.getElementById('h1');
+    h0.style.height = p0 + '%';
+    h1.style.height = p1 + '%';
+    h0.innerHTML = `<span style="position:absolute;top:-12px;left:0;width:100%;text-align:center;font-size:8px;">${p0}%</span>`;
+    h1.innerHTML = `<span style="position:absolute;top:-12px;left:0;width:100%;text-align:center;font-size:8px;">${p1}%</span>`;
+
+    // Рендер сфер Блоха
+    renderBloch('c0', (type === 'constant' ? 0 : Math.PI), effectiveNoise/100);
+    renderBloch('c1', (type === 'balanced' ? Math.PI : 0), effectiveNoise/100);
+
+    if(!isBatch) { 
+        beep(600, 0.1); 
+        addLog(`RUN_${type.toUpperCase()} | SHOTS:${shots} | NOISE:${effectiveNoise.toFixed(0)}%`); 
+    }
+    return { type, fid, n: effectiveNoise };
+}
+
+async function runBatch() {
+    const size = parseInt(document.getElementById('b-sel').value);
+    addLog(`>>> BATCH_START [${size}]`);
+    for(let i=0; i<size; i++) {
+        let r = run('random', true);
+        beep(700 + (i*2), 0.05, 0.02);
+        addLog(` [#${i+1}] TYPE:${r.type.toUpperCase()} | FID:${r.fid} | N:${r.n}%`);
+        await new Promise(res => setTimeout(res, 60));
+    }
+    addLog(`<<< BATCH_DONE`);
+}
+
+function renderBloch(id, p, noise) {
+    const c = document.getElementById(id); const ctx = c.getContext('2d');
+    ctx.clearRect(0,0,130,130); ctx.strokeStyle='#1a3a3a';
+    ctx.beginPath(); ctx.arc(65,65,55,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(65,65,55,18,0,0,Math.PI*2); ctx.stroke();
+    const x = 65 + 55*Math.sin(p + (Math.random()-0.5)*noise);
+    const y = 65 - 55*Math.cos(p + (Math.random()-0.5)*noise);
+    ctx.strokeStyle = noise > 0.75 ? '#f00' : '#0ff'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(65,65); ctx.lineTo(x,y); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fillStyle=ctx.strokeStyle; ctx.fill();
+}
+
+// Исправленный addLog: теперь железно пишет в массив для скачивания
+function addLog(m) {
+    const s = document.getElementById('log-stream');
+    const time = new Date().toLocaleTimeString();
+    const entry = `[${time}] ${m}`;
+    
+    // Сохраняем для файла
+    logDataFull.push(entry); 
+    
+    // Выводим на экран
+    const div = document.createElement('div');
+    div.textContent = entry;
+    s.appendChild(div);
+    s.scrollTop = s.scrollHeight;
+}
+
+function downloadLogs() {
+    const header = "=== IBM_Q_V5_QUANTUM_REPORT ===\r\n";
+    const circuit = "CURRENT_CIRCUIT:\r\n" + document.getElementById('circuit-display').innerText + "\r\n\r\n";
+    const body = logDataFull.join('\r\n');
+    const finalContent = header + circuit + "EVENT_LOGS:\r\n" + body;
+
+    // Создаем невидимый элемент для копирования
+    const el = document.createElement('textarea');
+    el.value = finalContent;
+    el.setAttribute('readonly', '');
+    el.style.position = 'absolute';
+    el.style.left = '-9999px';
+    document.body.appendChild(el);
+    
+    el.select();
+    el.setSelectionRange(0, 99999); // Для мобильных устройств
+    
+    try {
+        document.execCommand('copy');
+        addLog("SYSTEM_REPORT_COPIED_TO_CLIPBOARD");
+        alert("LOGS COPIED! Paste them into any text file.");
+    } catch (err) {
+        alert("ERROR: Unable to copy logs.");
+    }
+    
+    document.body.removeChild(el);
+}
+
+function loopNoise() {
+    const c = document.getElementById('noise-canvas'); const ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.fillRect(0,0,c.width,c.height);
+    ctx.strokeStyle='#0ff'; ctx.beginPath(); ctx.moveTo(0,20);
+    const n = parseInt(document.getElementById('n-sld').value);
+    for(let i=0; i<c.width; i+=5) ctx.lineTo(i, 20 + (Math.random()-0.5)*n/3);
+    ctx.stroke();
+    requestAnimationFrame(loopNoise);
+}
+</script>
+</body>
+</html>
